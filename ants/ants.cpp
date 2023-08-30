@@ -4,264 +4,185 @@
 #include <thread>
 #include <condition_variable>
 #include <random>
-#include <iostream>
+
+#include "ant.h"
 #include <vector>
 
-#define WIDTH 1200
-#define HEIGHT 1200
-#define INITIAL_NUMBER 100
-using std::vector;
-
-
-class ant{
+class simulation{
 private:
-	double x, y;
-	int speed;
-	int size;
-	int range;
-	double target_x, target_y;
-	double target_dis;
-	bool has_eaten;
-	bool alive;
+    ALLEGRO_DISPLAY * display;
+    std::mutex mutex_display;
+    std::condition_variable cv_display;
+    bool display_set = false;
+
+    std::mutex mutex_end;
+    std::condition_variable cv_end;
+    bool game_end = false;
+
+    std::vector<ant> ants;
+    candy candies[NUMBER_OF_CANDIES];
+
 public:
-	void set(int poz_x, int poz_y, int sp, int si, int ra)
-	{
-		x = poz_x;
-		y = poz_y;
-		speed = sp;
-		size = si;
-		range = ra;
-		target_dis = 1000000;
-		has_eaten = false;
-		alive = true;
-	}
-	
-	void draw()
-	{
-		if(!alive)
-			return;
-		al_draw_filled_rectangle(x - size / 16, y - size / 16, x + size / 16, y + size / 16, al_map_rgb(speed, size, range));
-	}
-	
-	void move(int tick)
-	{
-		if(!alive)
-			return;
-		if(tick % (17 - speed / 16) != 0)
-			return;
-		if(target_dis > 10000)
-			return;
-		
-		if(target_dis < size / 32)
-			return;
-			
-		if(target_x  > x)
-			x++;
-		else
-			x--;
-		if(target_y > y)
-			y++;
-		else
-			y--;
-		target_dis = 1000000;
-	}
-	
-	void find_target(ant a)
-	{
-		if(!alive || size - a.size < 32 || a.is_dead())
-			return;
-		
-		double dis = (x - a.x) * (x - a.x) + (y - a.y) * (y - a.y);
-		dis = sqrt(dis);
-		if(dis > range)
-			return;
-		if(dis < target_dis)
-		{
-			target_dis = dis;
-			target_x = a.x;
-			target_y = a.y;
-		}
-	}
-	
-	void try_eat(ant & a)
-	{
-		if(!alive || size - a.size < 32 || a.is_dead())
-			return;
-		
-		double dis = (x - a.x) * (x - a.x) + (y - a.y) * (y - a.y);
-		dis = sqrt(dis);	
-		if(dis < size / 16)
-		{
-			has_eaten = true;
-			a.die();
-		}
-	}
-	
-	void die()
-	{
-		alive = false;
-	}
-	
-	bool is_dead()
-	{
-		return !alive;
-	}
-	
-	void end_of_day()
-	{
-		if(!has_eaten)
-			die();
-		has_eaten = false;
-	}
-	
-	ant mutate(int a, int b, int c)
-	{
-		ant temp;
-		temp.speed = speed + a;
-		temp.size = size + b;
-		temp.range = range + c;
-		if(temp.speed < 0)
-			temp.speed = 0;
-		if(temp.size < 0)
-			temp.size = 0;
-		if(temp.range < 0)
-			temp.range = 0;
-		while(temp.speed + temp.size + temp.range > 255)
-		{
-			temp.speed--;
-			temp.size--;
-			temp.range--;
-		}
-		temp.has_eaten = false;
-		temp.alive = true;
-		temp.target_dis = 1000000;
-		return temp;
-	}
-	
-	void set_poz(double poz_x, double poz_y)
-	{
-		x = poz_x;
-		y = poz_y;
-	}
+    void init()
+    {
+        restart();
+        for(int i = 0; i < NUMBER_OF_ANTS; i++)
+        {
+            ant a;
+            a.init();
+            ants.push_back(a);
+        }
+
+    }
+
+    void restart()
+    {
+        display_set = false;
+        game_end = false;
+        for(size_t i = 0; i < ants.size(); i++)
+            ants[i].set();
+        for(int i = 0; i < NUMBER_OF_CANDIES; i++)
+            candies[i].set();
+    }
+
+    void next_level()
+    {
+        for(int i = 0; i < NUMBER_OF_CANDIES; i++)
+            candies[i].set();
+        std::vector<ant> temp;
+        for(size_t i = 0; i < ants.size(); i++)
+        {
+            int x = ants[i].how_many_eaten();
+            for(int j = 0; j < x; j++)
+            {
+                ant a;
+                a.copy(ants[i]);
+                temp.push_back(a);
+            }
+        }
+        ants = temp;
+    }
+
+    void draw()
+    {
+        al_clear_to_color(al_map_rgb(0, 0, 0));
+
+        for(size_t i = 0; i < ants.size(); i++)
+            ants[i].draw();
+        for(int i = 0; i < NUMBER_OF_CANDIES; i++)
+            candies[i].draw();
+
+        al_flip_display();
+
+    }
+
+    void set_display(ALLEGRO_DISPLAY * d)
+    {
+        std::unique_lock<std::mutex> lock(mutex_display);
+        display = d;
+        display_set = true;
+        cv_display.notify_all();
+    }
+
+    ALLEGRO_DISPLAY * get_display()
+    {
+        std::unique_lock<std::mutex> lock(mutex_display);
+        cv_display.wait(lock, [this]{return display_set;});
+        return display;
+    }
+
+
+    void wait_for_end()
+    {
+        std::unique_lock<std::mutex> lock(mutex_end);
+        cv_end.wait(lock, [this]{return game_end;});
+    }
+
+    void end()
+    {
+        std::unique_lock<std::mutex> lock(mutex_end);
+        game_end = true;
+        cv_end.notify_all();
+    }
+
+    bool is_ended()
+    {
+        std::unique_lock<std::mutex> lock(mutex_end);
+        return game_end;
+    }
+
+    void move()
+    {
+        for(size_t i = 0; i < ants.size(); i++)
+        {
+            ants[i].find_target(NUMBER_OF_CANDIES, candies);
+            ants[i].move();
+            ants[i].try_to_eat(NUMBER_OF_CANDIES, candies);
+        }
+        int candies_on_board = 0;
+        for(int i = 0; i < NUMBER_OF_CANDIES; i++)
+            if(!candies[i].has_been_eaten())
+                candies_on_board++;
+        if(candies_on_board == 0)
+            next_level();
+    }
 };
 
-vector <ant> ants;
-
-void init()
+void input_manager(simulation &sim)
 {
-	al_init();
-	std::random_device dev;
-	std::mt19937 rng;
-	std::uniform_int_distribution<std::mt19937::result_type> poz_x_generator;
-	std::uniform_int_distribution<std::mt19937::result_type> poz_y_generator;
-	std::uniform_int_distribution<std::mt19937::result_type> char_generator;
-	poz_x_generator = std::uniform_int_distribution<std::mt19937::result_type>(0, WIDTH);
-	poz_y_generator = std::uniform_int_distribution<std::mt19937::result_type>(0, HEIGHT);
-	char_generator = std::uniform_int_distribution<std::mt19937::result_type>(0, 255);
-	ant temp;
-	for(size_t i = 0; i < INITIAL_NUMBER; i++)
-		ants.push_back(temp);
-	rng = std::mt19937(dev());
-	for(size_t i = 0; i < ants.size(); i++)
-	{
-		double poz_x = poz_x_generator(rng);
-		double poz_y = poz_y_generator(rng);
-		int speed = char_generator(rng);
-		int size = char_generator(rng);
-		int range = char_generator(rng);
-		while(speed + size + range > 255)
-		{
-			speed--;
-			size--;
-			range--;
-		}
-		ants[i].set(poz_x, poz_y, speed, size, range);
-	}
+
+    ALLEGRO_EVENT_QUEUE* queue = al_create_event_queue();
+    al_register_event_source(queue, al_get_keyboard_event_source());
+    al_register_event_source(queue, al_get_mouse_event_source());
+    al_register_event_source(queue, al_get_display_event_source(sim.get_display()));
+    ALLEGRO_EVENT event;
+    bool run = true;
+    while(run)
+    {
+        al_wait_for_event(queue, &event);
+        switch(event.type)
+        {
+            case ALLEGRO_EVENT_DISPLAY_CLOSE:
+            case ALLEGRO_EVENT_KEY_DOWN:
+                sim.end();
+                run = false;
+                break;
+        }
+    }
+    al_destroy_event_queue(queue);
 }
 
-void draw()
+void create_display(simulation & sim)
 {
-	al_clear_to_color(al_map_rgb(0, 0, 0));
+    al_set_new_display_flags(ALLEGRO_WINDOWED);
+    ALLEGRO_DISPLAY* disp = al_create_display(WIDTH, HEIGHT);
+    al_init_primitives_addon();
+    sim.set_display(disp);
+    while(!sim.is_ended())
+    {
+        sim.draw();
+        sim.move();
+        usleep(100);
+    }
 
-	for(size_t i = 0; i < ants.size(); i++)
-	{
-		ants[i].draw();
-	}
+    sim.wait_for_end();
+}
 
-	al_flip_display();
+void init(simulation & game)
+{
+    al_init();
+    al_install_keyboard();
+    al_install_mouse();
+    game.init();
 }
 
 int main()
 {
-	init();
-	al_set_new_display_flags(ALLEGRO_WINDOWED);
-	ALLEGRO_DISPLAY* disp = al_create_display(WIDTH, HEIGHT);
-	al_init_primitives_addon();
-	draw();
-	int tick = 0;
-	std::random_device dev;
-	std::mt19937 rng;
-	std::uniform_int_distribution<std::mt19937::result_type> poz_x_generator;
-	std::uniform_int_distribution<std::mt19937::result_type> poz_y_generator;
-	std::uniform_int_distribution<std::mt19937::result_type> mutation_generator;
-	poz_x_generator = std::uniform_int_distribution<std::mt19937::result_type>(0, WIDTH);
-	poz_y_generator = std::uniform_int_distribution<std::mt19937::result_type>(0, HEIGHT);
-	mutation_generator = std::uniform_int_distribution<std::mt19937::result_type>(-5, 5);
-	while(true)
-	{
-		int number_of_berries = ants.size();
-		while(number_of_berries)
-		{
-			for(size_t i = 0; i < ants.size(); i++)
-			{
-				ants[i].move(tick);
-			}
-			for(size_t i = 0; i < ants.size(); i++)
-			{
-				for(size_t j = i + 1; j < ants.size(); j++)
-				{
-					ants[i].try_eat(ants[j]);
-					ants[j].try_eat(ants[i]);
-				}
-			}
-			tick++;
-			tick %= 64;
-			for(size_t i = 0; i < ants.size(); i++)
-			{
-				for(size_t j = i + 1; j < ants.size(); j++)
-				{
-					ants[i].find_target(ants[j]);
-					ants[j].find_target(ants[i]);
-				}
-			}
-			draw();
-			usleep(5000);
-		}
-		vector <ant> temp;
-		for(size_t i = 0; i < ants.size(); i++)
-		{
-			ants[i].end_of_day();
-			if(!ants[i].is_dead())
-			{
-				for(int j = 0; j < 8; j++)
-				{
-					int a = mutation_generator(rng);
-					int b = mutation_generator(rng);
-					int c = mutation_generator(rng);
-					temp.push_back(ants[i].mutate(a, b, c));
-				}
-			}	
-		}
-		std::cout << ants.size() << "\n";
-		ants = temp;
-		std::cout << ants.size() << "\n";
-		for(size_t i = 0; i < ants.size(); i++)
-		{
-			double x = poz_x_generator(rng);
-			double y = poz_y_generator(rng);
-			ants[i].set_poz(x, y);
-		}
-	}
-	al_destroy_display(disp);
-	return 0;
+    simulation sim;
+    init(sim);
+    std::thread display([&sim]{create_display(sim);});
+    std::thread input([&sim]{input_manager(sim);});
+    input.join();
+    display.join();
+    return 0;
 }
