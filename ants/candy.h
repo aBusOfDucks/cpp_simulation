@@ -28,7 +28,7 @@ public:
     {
         if(!exist)
             return;
-        al_draw_filled_rectangle(poz_x - CANDY_SIZE, poz_y - CANDY_SIZE, poz_x + CANDY_SIZE, poz_y + CANDY_SIZE, CANDY_COLOR);
+        al_draw_filled_circle(poz_x, poz_y, CANDY_SIZE, CANDY_COLOR);
     }
     void set()
     {
@@ -61,10 +61,11 @@ public:
 
     bool check_collision(double x, double y)
     {
-        double dis_x = abs(x - poz_x);
-        double dis_y = abs(y - poz_y);
-        double min_dis = CANDY_SIZE + ANT_SIZE;
-        if(dis_x < min_dis && dis_y < min_dis)
+        double dx = x - poz_x;
+        double dy = y - poz_y;
+        double dis = dx * dx + dy * dy;
+        dis = sqrt(dis);
+        if(dis <= CANDY_SIZE + ANT_SIZE)
         {
             eat();
             return true;

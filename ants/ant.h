@@ -4,6 +4,8 @@
 #include "candy.h"
 #include <iostream>
 #include <math.h>
+#include <allegro5/allegro5.h>
+#include <allegro5/allegro_primitives.h>
 
 class ant {
 private:
@@ -54,14 +56,15 @@ private:
         std::uniform_int_distribution<std::mt19937::result_type> speed_generator;
 
         poz_generator = std::uniform_int_distribution<std::mt19937::result_type>(0, 41);
-        speed_generator = std::uniform_int_distribution<std::mt19937::result_type>(0, 11);
+        speed_generator = std::uniform_int_distribution<std::mt19937::result_type>(0, 2 * MUTATION_CONST + 1);
 
-     //   poz_x += (double) poz_generator(rng) - 20;
-     //   poz_y += (double) poz_generator(rng) - 20;
-        speed += speed_generator(rng) - 5;
+        // Slightly change position
+        // poz_x += (double) poz_generator(rng) - 20;
+        // poz_y += (double) poz_generator(rng) - 20;
+        // poz_x = trim(poz_x, 0, WIDTH - 1);
+        // poz_y = trim(poz_y, 0, HEIGHT - 1);
 
-     //   poz_x = trim(poz_x, 0, WIDTH - 1);
-    //    poz_y = trim(poz_y, 0, HEIGHT - 1);
+        speed += speed_generator(rng) - MUTATION_CONST;
         speed = trim(speed, 0, 255);
 
     }
@@ -77,14 +80,19 @@ public:
 
         speed_generator = std::uniform_int_distribution<std::mt19937::result_type>(0, 256);
 
-        speed = speed_generator(rng);
+        // Ants start with random speed
+        // speed = speed_generator(rng);
+
+        // All ants start with the same speed
+        speed = 32;
+
         color = speed_generator(rng);
         set();
     }
 
     void draw()
     {
-        al_draw_filled_rectangle(poz_x - ANT_SIZE, poz_y - ANT_SIZE, poz_x + ANT_SIZE, poz_y + ANT_SIZE, get_color());
+        al_draw_filled_circle(poz_x, poz_y, ANT_SIZE, get_color());
     }
 
     void set()
@@ -169,17 +177,30 @@ public:
     void copy(ant a)
     {
         speed = a.speed;
- //       poz_x = a.poz_x;
-   //     poz_y = a.poz_y;
+
+        // Copy parent's position
+        // poz_x = a.poz_x;
+        // poz_y = a.poz_y;
+
+        // Get random position
         relocate();
+
         candy_eaten = 0;
         color = a.color;
         mutate();
     }
 
-    int how_many_eaten()
+    int how_many_kids()
     {
-        return candy_eaten;
+        // Punish being fast by having fewer kids
+        // int ans = candy_eaten;
+        // ans -= speed / 32;
+        // if(ans < 0)
+        //    ans = 0;
+        // return ans;
+
+        // Get as many kids as candy eaten
+         return candy_eaten;
     }
 };
 

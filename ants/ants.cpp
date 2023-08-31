@@ -52,7 +52,7 @@ public:
         std::vector<ant> temp;
         for(size_t i = 0; i < ants.size(); i++)
         {
-            int x = ants[i].how_many_eaten();
+            int x = ants[i].how_many_kids();
             for(int j = 0; j < x; j++)
             {
                 ant a;
@@ -162,7 +162,7 @@ void create_display(simulation & sim)
     {
         sim.draw();
         sim.move();
-        usleep(100);
+        usleep(1000);
     }
 
     sim.wait_for_end();
